@@ -1,8 +1,8 @@
 #!/root/Software/anaconda3/bin/python3
 import numpy as np
 import torch as tc
-import numpy.fft as ft
 import fileIO
+from tools import Tools_cuda as tool
 
 
 class EnerSpec2D:
@@ -47,23 +47,15 @@ class EnerSpec2D:
 		Eww = np.zeros([para.Nz, para.Nx//2+1], dtype='>f4')
 		Euv = np.zeros([para.Nz, para.Nx//2+1], dtype='>f4')
 
-		for t in set(tsteps1 + tsteps2 + tsteps3):
+		for t in sorted(set(tsteps1 + tsteps2 + tsteps3)):
 
 			if t in tsteps1: u = fileIO.get_layer(para.fieldpath + 'chan2000.%d.U'%t, j)
 			if t in tsteps2: v = fileIO.get_layer(para.fieldpath + 'chan2000.%d.V'%t, j)
 			if t in tsteps3: w = fileIO.get_layer(para.fieldpath + 'chan2000.%d.W'%t, j)
 
-			try:
-				if t in tsteps1: u = self.spec_cuda(tc.tensor(u.astype(np.float32), device='cuda'))
-				if t in tsteps2: v = self.spec_cuda(tc.tensor(v.astype(np.float32), device='cuda'))
-				if t in tsteps3: w = self.spec_cuda(tc.tensor(w.astype(np.float32), device='cuda'))
-				if t in tsteps1: u = u[0].cpu().numpy() + 1j * u[1].cpu().numpy()
-				if t in tsteps2: v = v[0].cpu().numpy() + 1j * v[1].cpu().numpy()
-				if t in tsteps3: w = w[0].cpu().numpy() + 1j * w[1].cpu().numpy()
-			except:
-				if t in tsteps1: u = self.spec(u)
-				if t in tsteps2: v = self.spec(v)
-				if t in tsteps3: w = self.spec(w)
+			if t in tsteps1: u = tool.spec(u)
+			if t in tsteps2: v = tool.spec(v)
+			if t in tsteps3: w = tool.spec(w)
 
 			if t in tsteps1: u[0,0] = 0
 			if t in tsteps2: v[0,0] = 0
@@ -88,53 +80,28 @@ class EnerSpec2D:
 
 
 
-	@staticmethod
-	def spec(q): return ft.ifft(ft.ihfft(q), axis=-2)
-
-	@staticmethod
-	def phys(q): return ft.hfft(ft.fft(q, axis=-2)) # Nx must be even
-
-	@staticmethod
-	def spec_cuda(q):
-		''' do the same spec for GPU tensor q '''
-		qr, qi = tc.rfft(q, signal_ndim=2).T
-		qr /= tc.prod(tc.tensor(q.shape[-2:]))
-		qi /= tc.prod(tc.tensor(q.shape[-2:])) * (-1)
-		return tc.stack([qr.T, qi.T]) # torch has no complex type
-
-	@staticmethod
-	def flipk(q):
-		''' fold all energy to the [:Nz//2+1,:Nx//2+1] range
-		    Nx must be even, as required by hft, Nz can be even or odd  '''
-		nzcu = int(np.ceil(q.shape[-2]/2))
-		nzcd = q.shape[-2]//2
-		p = np.copy((q.T[:,:nzcd+1]).T)
-		p.T[:,1:nzcu] += q.T[:,:nzcd:-1]
-		p.T[1:-1] *= 2
-		return p
-
-
 if __name__ == '__main__':
-	from basic2k import DataSetInfo
+	from basic4k2 import DataSetInfo
 	from fileIO_statis import Write
 
 	workpath = ''
 
-	para = DataSetInfo('')
-	es2d = EnerSpec2D(para)
+	para = DataSetInfo('/mnt/TurbNAS/Database/DATABASE_UPM/chan4200/')
+	# es2d = EnerSpec2D(para)
 
-	# compute & save results
-	es2d.calc()
-	es2d.write(workpath)
+	# # compute & save results
+	# es2d.calc()
+	# es2d.write(workpath)
 
 	# read result
-	j = np.argmin(np.abs(para.yps-15))
-	Euu = EnerSpec2D.flipk(fileIO.get_layer(workpath + 'Euu.bin', j))
-	Evv = EnerSpec2D.flipk(fileIO.get_layer(workpath + 'Evv.bin', j))
-	Eww = EnerSpec2D.flipk(fileIO.get_layer(workpath + 'Eww.bin', j))
-	Euv = EnerSpec2D.flipk(fileIO.get_layer(workpath + 'Euv.bin', j))
+	for yp in (15, 50):
+		j = np.argmin(np.abs(para.yps-yp))
+		Euu = tool.flipk(fileIO.get_layer(para.path + 'spectra/Euu.bin', j))
+		Evv = tool.flipk(fileIO.get_layer(para.path + 'spectra/Evv.bin', j))
+		Eww = tool.flipk(fileIO.get_layer(para.path + 'spectra/Eww.bin', j))
+		Euv = tool.flipk(fileIO.get_layer(para.path + 'spectra/Euv.bin', j))
 
-	# write result
-	Write.write_es2d(workpath + 'ES2D.dat', para, 'DNS2000', Euu, Evv, Eww, Euv)
+		# write result
+		Write.write_es2d(workpath + 'ES2D_yp%i.dat'%yp, para, 'DNS4200', Euu, Evv, Eww, Euv)
 
 

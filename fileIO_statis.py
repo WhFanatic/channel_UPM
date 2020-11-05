@@ -137,21 +137,29 @@ class Write:
 			'zone t = "%s", i = %i, j = %i' %(casename, len(irange), len(krange))
 
 		data = np.empty([6, len(krange), len(irange)])
-		for kk,k in enumerate(krange):
-			for ii,i in enumerate(irange):
-				data[:, kk, ii] = [
-					para.kxs[i],
-					para.kzs[k],
-					Euu[k,i],
-					Evv[k,i],
-					Eww[k,i],
-					Euv[k,i], ]
 
-		data[2:] *= data[0] * data[1] / (4*np.pi**2 / para.Lx / para.Lz) / para.uc**2
-		data[:2] = np.log10(2*np.pi / data[:2] / para.lc)
-		data = np.array([np.ravel(temp) for temp in data]).T
+		# # loop implementation is too slow
+		# for kk,k in enumerate(krange):
+		# 	for ii,i in enumerate(irange):
+		# 		data[:, kk, ii] = [
+		# 			np.log10(2*np.pi / para.kxs[i] / para.lc),
+		# 			np.log10(2*np.pi / para.kzs[k] / para.lc),
+		# 			Euu[k,i] * para.kxs[i] * para.kzs[k] / (4*np.pi**2 / para.Lx / para.Lz) / para.uc**2,
+		# 			Evv[k,i] * para.kxs[i] * para.kzs[k] / (4*np.pi**2 / para.Lx / para.Lz) / para.uc**2,
+		# 			Eww[k,i] * para.kxs[i] * para.kzs[k] / (4*np.pi**2 / para.Lx / para.Lz) / para.uc**2,
+		# 			Euv[k,i] * para.kxs[i] * para.kzs[k] / (4*np.pi**2 / para.Lx / para.Lz) / para.uc**2,
+		# 			]
 
-		np.savetxt(filename, data, header=header, comments='')
+		data[0]      = np.log10(2*np.pi/para.lc / para.kxs[irange])
+		data[1].T[:] = np.log10(2*np.pi/para.lc / para.kzs[krange])
+		data[2] = (Euu[krange].T * para.kzs[krange])[irange].T * para.kxs[irange] / (4*np.pi**2/para.Lx/para.Lz) / para.uc**2
+		data[3] = (Evv[krange].T * para.kzs[krange])[irange].T * para.kxs[irange] / (4*np.pi**2/para.Lx/para.Lz) / para.uc**2
+		data[4] = (Eww[krange].T * para.kzs[krange])[irange].T * para.kxs[irange] / (4*np.pi**2/para.Lx/para.Lz) / para.uc**2
+		data[5] = (Euv[krange].T * para.kzs[krange])[irange].T * para.kxs[irange] / (4*np.pi**2/para.Lx/para.Lz) / para.uc**2
+
+		data = np.transpose([_.ravel() for _ in data])
+
+		np.savetxt(filename, data, fmt='%.8e', header=header, comments='')
 		if not os.system("preplot " + filename):
 			pass
 			# os.system("rm -f " + filename)
