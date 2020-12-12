@@ -2,14 +2,14 @@ import numpy as np
 
 
 
-def get_layer(filename, j):
+def get_layer(filename, j, nx=-1, nz=-1):
 	''' read data from an x-z plane, index j is 0-based '''
-	nx, nz, ny = map(int, np.fromfile(filename, dtype=">f4", count=3))
+	if nx==-1 and nz==-1: nx, nz, ny = map(int, np.fromfile(filename, dtype=">f4", count=3))
 	return np.fromfile(filename, dtype=">f4", count=nx*nz, offset=4*nx*nz*(j+1)).reshape([nz,nx])
 
-def get_stream(filename, j, k):
+def get_stream(filename, j, k, nx=-1, nz=-1):
 	''' read data along an x line, indices j & k are 0-based '''
-	nx, nz, ny = map(int, np.fromfile(filename, dtype=">f4", count=3))
+	if nx==-1 and nz==-1: nx, nz, ny = map(int, np.fromfile(filename, dtype=">f4", count=3))
 	return np.fromfile(filename, dtype=">f4", count=nx, offset=4*nx*(nz*(j+1)+k)).ravel()
 
 

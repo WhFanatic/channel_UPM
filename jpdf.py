@@ -1,118 +1,122 @@
-#!/root/Software/anaconda3/bin/python3
 import numpy as np
-from numpy.fft import hfft,ihfft
-from os import listdir, system
-
-import basic
-from basic import *
-from plot import *
+import fileIO
 
 
 
-class PDF:
-	def __init__(self):
-		pass
+def calc_jpdf(uset_, vset_, n1=100, n2=100):
 
-	@staticmethod
-	def get_samples(get_layer_fluc_plus, yp, tsteps=None):
+	uset = np.ravel(uset_)
+	vset = np.ravel(vset_)
 
-		j = np.argmin(np.abs(yps-yp))
+	if len(uset) != len(vset):
+		print('Samples do not align!')
+		exit()
 
-		uset, vset, wset = [], [], []
+	u0, v0 = np.min(uset), np.min(vset)
+	u1, v1 = np.max(uset), np.max(vset)
 
-		for t in (tsteps if tsteps else basic.tsteps):
-			uset.append( get_layer_fluc_plus('chan2000.%i.U'%t, j) )
-			vset.append( get_layer_fluc_plus('chan2000.%i.V'%t, j) )
-			wset.append( get_layer_fluc_plus('chan2000.%i.W'%t, j) )
-			uset.append( get_layer_fluc_plus('chan2000.%i.U'%t, Ny-j-1) )
-			vset.append(-get_layer_fluc_plus('chan2000.%i.V'%t, Ny-j-1) )
-			wset.append( get_layer_fluc_plus('chan2000.%i.W'%t, Ny-j-1) )
+	us = np.linspace(u0, u1, n1)
+	vs = np.linspace(v0, v1, n2)
 
-		return	np.ravel(uset), \
-				np.ravel(vset), \
-				np.ravel(wset)
+	du = us[1] - us[0]
+	dv = vs[1] - vs[0]
 
-	@staticmethod
-	def calc_jpdf(uset, vset, n1=100, n2=100):
+	pdf = np.zeros([len(vs), len(us)])
 
-		u0, v0 = np.min(uset), np.min(vset)
-		u1, v1 = np.max(uset), np.max(vset)
+	idx = np.vstack([(uset-u0)/du+.5, (vset-v0)/dv+.5]).astype(int)
+	idx, cnt = np.unique(idx, return_counts=True, axis=-1)
 
-		us = np.linspace(u0, u1, n1)
-		vs = np.linspace(v0, v1, n2)
+	pdf[idx[1], idx[0]] += cnt / len(uset) / (du * dv)
 
-		du = us[1] - us[0]
-		dv = vs[1] - vs[0]
+	return us, vs, pdf
 
-		pdf = np.zeros([len(vs), len(us)])
 
-		idx = np.vstack([(uset-u0)/du, (vset-v0)/dv]).astype(int)
-		idx, cnt = np.unique(idx, return_counts=True, axis=-1)
+def get_samples(para, yp, tskip=1):
 
-		pdf[idx[1], idx[0]] += cnt / len(uset) / (du * dv)
+	get_fluc_plus = lambda q: (q - np.mean(q)) / para.uc
+	tsteps = para.tsteps[::tskip]
+	ny = para.Ny-1
 
-		return us, vs, pdf
+	j = np.argmin(np.abs(para.yps-yp))
 
-	@staticmethod
-	def write_jpdf(pame, us, vs, pdf, casename='jpdf'):
-		header = \
-			'Title = "Joint PDF of u and v"\n' + \
-			'variables = "%s", "%s", "%s"\n' \
-			% (	'u<sup>+</sup>',
-				'v<sup>+</sup>',
-				'pdf' ) + \
-			'zone t = "%s", i = %i, j = %i' %(casename, len(us), len(vs))
+	uset, vset, wset = [], [], []
 
-		data = np.empty([3, len(vs), len(us)])
+	for t in tsteps:
+		print('reading step %i'%t)
+		for jj in [j, ny-j]:
+			uset.append( get_fluc_plus(fileIO.get_layer(para.fieldpath+'chan2000.%i.U'%t, jj)) )
+			vset.append( get_fluc_plus(fileIO.get_layer(para.fieldpath+'chan2000.%i.V'%t, jj)) * (1 if jj==j else -1) )
+			wset.append( get_fluc_plus(fileIO.get_layer(para.fieldpath+'chan2000.%i.W'%t, jj)) )
 
-		for j, v in enumerate(vs):
-			for i, u in enumerate(us):
-				data[:,j,i] = u, v, pdf[j,i]
+	return [np.ravel(_) for _ in (uset, vset, wset)]
 
-		data = np.transpose([col.ravel() for col in data])
+def get_samples_filt(para, yp, dx):
 
-		np.savetxt(pame, data, header=header, comments='')
+	from filtdns import FDNS_CUDA as FDNS
+	from tools import Tools_cuda as tool
 
-		return pame
+	fdns = FDNS(para)
+	ny = para.Ny-1
 
-	@staticmethod
-	def read_jpdf(pame):
-		data = np.loadtxt(pame, skiprows=3)
+	jj = np.argmin(np.abs(para.yps - yp))
 
-		nx, ny = 0, 0
-		with open(pame) as fp:
-			for term in fp.readlines()[2].split(','):
-				if term.strip()[0] == 'i': nx = int(term.split('=')[-1])
-				if term.strip()[0] == 'j': ny = int(term.split('=')[-1])
+	uset, vset, wset = [], [], []
 
-		us = data[:nx,0]
-		vs = data[::nx,1]
-		pdf = np.reshape(data[:,2], [ny,nx])
+	for t in para.tsteps:
+		print('reading step %i'%t)
 
-		return us, vs, pdf
+		getlyr_u = lambda j: fileIO.get_layer(para.fieldpath + 'chan2000.%d.U'%t, j) / para.uc
+		getlyr_v = lambda j: fileIO.get_layer(para.fieldpath + 'chan2000.%d.V'%t, j) / para.uc
+		getlyr_w = lambda j: fileIO.get_layer(para.fieldpath + 'chan2000.%d.W'%t, j) / para.uc
 
+		uf, um = fdns.filt(getlyr_u, dx, dx, dx)
+		vf, vm = fdns.filt(getlyr_v, dx, dx, dx)
+		wf, wm = fdns.filt(getlyr_w, dx, dx, dx)
+
+		uset.append( tool.phys(uf[[jj, ny-jj]]) )
+		vset.append( tool.phys(vf[[jj, ny-jj]]) * np.reshape([1,-1], [-1,1,1]) )
+		wset.append( tool.phys(wf[[jj, ny-jj]]) )
+
+	return [np.ravel(_) for _ in (uset, vset, wset)]
+
+
+def write_jpdf(pame, us, vs, pdf, casename='jpdf'):
+	header = \
+		'Title = "Joint PDF of u and v"\n' + \
+		'variables = "%s", "%s", "%s"\n' \
+		% (	'u<sup>+</sup>',
+			'v<sup>+</sup>',
+			'pdf' ) + \
+		'zone t = "%s", i = %i, j = %i' %(casename, len(us), len(vs))
+
+	data = np.empty([3, len(vs), len(us)])
+
+	for j, v in enumerate(vs):
+		for i, u in enumerate(us):
+			data[:,j,i] = u, v, pdf[j,i]
+
+	data = np.transpose([col.ravel() for col in data])
+
+	np.savetxt(pame, data, header=header, comments='')
+
+	return pame
 
 
 if __name__ == '__main__':
+	import basic2k as basic
 
-	datapath = '../../../HoyasJimenez2008/fields/'
-	workpath = 'results/'
+	para = basic.DataSetInfo('/home/whn/nasdata/chan2000/')
 
-	get_fluc = lambda q: q - np.mean(q)
-	get_layer_fluc_plus = lambda fn, j: get_fluc(get_layer(datapath+fn, j)) / uc
+	yp = 174
 
-	uset, vset, wset = PDF.get_samples(get_layer_fluc_plus, 15)
+	# uset, vset, wset = get_samples(para, yp, tskip=1)
+	uset, vset, wset = get_samples_filt(para, yp, dx=100/2000)
 
-	us, vs, pdf_uv = PDF.calc_jpdf(uset, vset)
-	us, ws, pdf_uw = PDF.calc_jpdf(uset, wset)
+	us, vs, pdf_uv = calc_jpdf(uset, vset)
+	us, ws, pdf_uw = calc_jpdf(uset, wset)
 
-	PDF.write_jpdf(workpath + 'jpdf_uv.dat', us, vs, pdf_uv, casename='DNS2000')
-	PDF.write_jpdf(workpath + 'jpdf_uw.dat', us, ws, pdf_uw, casename='DNS2000')
-
-	plot_jpdf(workpath + 'jpdf_uv.png', us, vs, pdf_uv)
-	plot_jpdf(workpath + 'jpdf_uw.png', us, ws, pdf_uw)
-
-
+	write_jpdf('jpdf_uv.dat', us, vs, pdf_uv, casename='DNS2000')
+	write_jpdf('jpdf_uw.dat', us, ws, pdf_uw, casename='DNS2000')
 
 
 

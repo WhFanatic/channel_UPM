@@ -1,4 +1,3 @@
-#!/root/Software/anaconda3/bin/python3
 import numpy as np
 import torch as tc
 import fileIO
@@ -81,12 +80,12 @@ class EnerSpec2D:
 
 
 if __name__ == '__main__':
-	from basic4k2 import DataSetInfo
+	from basic2k import DataSetInfo
 	from fileIO_statis import Write
 
 	workpath = ''
 
-	para = DataSetInfo('/mnt/TurbNAS/Database/DATABASE_UPM/chan4200/')
+	para = DataSetInfo('/mnt/TurbNAS/Database/DATABASE_UPM/chan2000/')
 	# es2d = EnerSpec2D(para)
 
 	# # compute & save results
@@ -94,7 +93,7 @@ if __name__ == '__main__':
 	# es2d.write(workpath)
 
 	# read result
-	for yp in (15, 50):
+	for yp in (50, 100, 174, 1200):
 		j = np.argmin(np.abs(para.yps-yp))
 		Euu = tool.flipk(fileIO.get_layer(para.path + 'spectra/Euu.bin', j))
 		Evv = tool.flipk(fileIO.get_layer(para.path + 'spectra/Evv.bin', j))
@@ -102,6 +101,6 @@ if __name__ == '__main__':
 		Euv = tool.flipk(fileIO.get_layer(para.path + 'spectra/Euv.bin', j))
 
 		# write result
-		Write.write_es2d(workpath + 'ES2D_yp%i.dat'%yp, para, 'DNS4200', Euu, Evv, Eww, Euv)
+		Write.write_es2d(workpath + 'es2d_yp%i.dat'%yp, para, 'DNS2000', Euu, Evv, Eww, Euv)
 
 

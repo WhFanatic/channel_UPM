@@ -56,6 +56,8 @@ class DataSetInfo:
 
 		self.kxs = np.fft.rfftfreq(self.Nx, d=self.dx/(2*np.pi))
 		self.kzs = np.fft.rfftfreq(self.Nz, d=self.dz/(2*np.pi))
+		self.kxcs = np.fft.fftfreq(self.Nx, d=self.dx/(2*np.pi))
+		self.kzcs = np.fft.fftfreq(self.Nz, d=self.dz/(2*np.pi))
 
 		# inner scales
 		self.uc = self.Ret / self.Re
